@@ -19,7 +19,7 @@ PPT2Fig is a simple and practical tool that can quickly export the **current pag
 
 ## 安装方法
 
-1. 直接下载Releases中的exe文件，双击即可运行
+1. 直接下载[Releases](https://github.com/elliottzheng/ppt2fig/releases)中的exe文件，双击即可运行
 
 2. 如果你有python环境，可以使用pip安装
 

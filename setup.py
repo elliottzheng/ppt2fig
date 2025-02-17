@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(name='ppt2fig',
       version='1.0.1',
-      description='将当前PPT快速导出为PDF并裁剪白边',
+      description='一键将当前PPT的页面导出为PDF，并自动裁剪白边。',
       long_description=open('README.md', encoding='utf-8').read(),
       long_description_content_type='text/markdown',
       author='Elliot Zheng',
