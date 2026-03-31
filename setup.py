@@ -2,8 +2,10 @@
 
 from setuptools import setup
 
+from ppt2fig import __version__
+
 setup(name='ppt2fig',
-      version='1.1.0',
+      version=__version__,
       description='导出 PowerPoint 页面为 PDF，支持 Windows GUI 和跨平台 CLI。',
       long_description=open('README.md', encoding='utf-8').read(),
       long_description_content_type='text/markdown',
@@ -13,7 +15,8 @@ setup(name='ppt2fig',
       packages=['ppt2fig'],
       entry_points={
            'console_scripts': [
-               'ppt2fig = ppt2fig.main:main'
+               'ppt2fig = ppt2fig.main:main',
+               'ppt2fig-file-gui = ppt2fig.file_gui:main',
            ]
       },
       install_requires=[

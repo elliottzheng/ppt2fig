@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+from . import __version__
 from .core import detect_backends, export_selected_pages, parse_page_range
 
 
@@ -8,6 +9,12 @@ def build_parser():
     parser = argparse.ArgumentParser(
         prog="ppt2fig",
         description="将指定 PPTX 的指定页导出为 PDF，并可选自动裁剪白边。",
+    )
+    parser.add_argument(
+        "-v",
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument("pptx", nargs="?", help="输入的 PPTX 文件路径")
     parser.add_argument(
@@ -128,3 +135,7 @@ def main(argv=None):
         threshold=args.threshold,
     )
     print(output)
+
+
+if __name__ == "__main__":
+    main()
