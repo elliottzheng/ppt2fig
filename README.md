@@ -1,25 +1,30 @@
 # PPT2Fig
 
+PPT2Fig 是一个用于将 PPT 页面导出为 PDF 并自动裁剪白边的工具。
 
-PPT2Fig 是一个简单实用的工具，可以快速将 **当前打开的PowerPoint的当前页面** 导出为矢量PDF文件，并自动裁剪白边。非常适合科研人员在使用PPT作图时，修改PPT后快速导出PDF插入到论文中。
+- Windows 下保留原有 GUI，可直接导出当前打开的 PowerPoint 当前页
+- 新增跨平台 CLI，可直接指定 `pptx` 文件路径和页码
+- CLI 不依赖 Microsoft PowerPoint，可自动检测本机候选后端
 
-PPT2Fig is a simple and practical tool that can quickly export the **current page of the currently opened PowerPoint** to a vector PDF file and automatically crop the white edge. It is very useful for scientific researchers to quickly export PDF after modifying PPT and inserting it into the paper.
+PPT2Fig exports PowerPoint slides to PDF and can automatically crop white margins.
 
 
 
 ## 功能特点
 
-- 一键导出当前 PPT 页面为 PDF
-- 自动检测 PowerPoint 运行状态
-- 简洁的界面设计，默认一键操作
+- Windows GUI 一键导出当前 PowerPoint 当前页为 PDF
+- 跨平台 CLI，支持指定 PPT/PPTX/ODP 文件和页码
+- CLI 不依赖 Microsoft PowerPoint
+- 自动检测系统中的候选后端
+- 自动裁剪白边
 - 可展开的高级裁剪设置：
   - 快速预设：紧密裁剪、小白边、中白边、保留原边距
   - 可调整保留原始边距的百分比
   - 可设置额外的白边大小
   - 可调整背景检测阈值
   - 支持统一裁剪和统一页面大小选项
-- 智能记忆上次保存路径
-- 始终置顶显示，方便操作
+- Windows GUI 智能记忆上次保存路径
+- Windows GUI 始终置顶显示，方便操作
 
 
 
@@ -41,7 +46,12 @@ ppt2fig
 python -m ppt2fig
 ```
 
+如果你要在 Linux/macOS 上使用 CLI，推荐安装 LibreOffice，并确保命令行里能找到 `soffice` 或 `libreoffice`。
+
 ## 使用方法
+
+### Windows GUI
+
 程序运行后会出现一个简洁的界面：
 
 ![screenshot](./assets/screenshot.png)
@@ -82,26 +92,110 @@ python -m ppt2fig
    - **统一裁剪**: 所有页面使用相同的裁剪量
    - **统一页面大小**: 所有页面设为相同尺寸
 
+### CLI
+
+CLI 适用于 Linux、macOS、Windows，不依赖 PowerPoint。
+程序会自动检测本机候选后端。
+当前已实现的自动导出后端是：
+
+- `LibreOffice`: Windows / Linux / macOS
+- `PowerPoint`: Windows / macOS
+- `WPS`: Windows
+
+`--list-backends` 会尽量按当前平台列出已检测到的候选程序，即使该平台暂时还没有实现对应的自动导出驱动。
+在 `auto` 模式下，默认优先级是 `LibreOffice > WPS > PowerPoint`。
+
+基本示例：
+
+```bash
+ppt2fig ./demo.pptx --pages 3
+```
+
+导出多个页码：
+
+```bash
+ppt2fig ./demo.pptx --pages 1,3,5-7 -o ./figure.pdf
+```
+
+关闭裁剪：
+
+```bash
+ppt2fig ./demo.pptx --pages 2 --no-crop
+```
+
+指定 LibreOffice 可执行文件：
+
+```bash
+ppt2fig ./demo.pptx --pages 4 --office-bin /usr/bin/soffice
+```
+
+强制使用 PowerPoint 后端：
+
+```bash
+ppt2fig ./demo.pptx --pages 2 --backend powerpoint
+```
+
+强制使用 WPS 后端：
+
+```bash
+ppt2fig ./demo.pptx --pages 2 --backend wps
+```
+
+使用 PowerPoint 的打印质量导出：
+
+```bash
+ppt2fig ./demo.pptx --pages 2 --backend powerpoint --powerpoint-intent print
+```
+
+查看当前机器检测到的候选后端：
+
+```bash
+ppt2fig --list-backends
+```
+
+常用参数：
+
+- `--pages`: 必填，支持 `1,3,5-7`
+- `--output`: 输出 PDF 路径
+- `--office-bin`: 指定 `soffice` 或 `libreoffice`
+- `--backend`: 选择 `auto`、`libreoffice`、`powerpoint` 或 `wps`
+- `--powerpoint-intent`: PowerPoint 后端使用 `print` 或 `screen`
+- `--bitmap-missing-fonts`: 字体无法嵌入时将文字转为位图
+- `--list-backends`: 查看当前检测到的候选后端
+- `--no-crop`: 不裁剪白边
+- `--percent-retain`: 保留原始边距百分比
+- `--margin-size`: 额外白边，单位 bp
+- `--threshold`: 背景检测阈值
+- `--no-uniform`: 禁用统一裁剪
+- `--no-same-size`: 禁用统一页面大小
 
 
 ## 系统要求
 
-- Windows 操作系统
-- Microsoft PowerPoint
+- GUI:
+  - Windows
+  - Microsoft PowerPoint
+- CLI:
+  - Windows / Linux / macOS
+  - 推荐 LibreOffice
 - Python 3.8+
 
 ## 依赖项（安装时自动安装）
 
-- comtypes: 用于与PowerPoint交互    
+- comtypes: Windows GUI 下用于与PowerPoint交互
 - pdfCropMargins: 裁剪PDF白边
-- tkinter: python自带
+- pypdf: 从导出的整份 PDF 中提取指定页
+- tkinter: Python 自带，仅 GUI 使用
 
 
 ## 注意事项
 
-- 使用前请确保已经打开 PowerPoint
-- 确保当前 PowerPoint 中有打开的演示文稿
-- 导出过程中请勿关闭 PowerPoint
+- GUI 使用前请确保已经打开 PowerPoint
+- GUI 依赖当前活动演示文稿
+- CLI 会先自动检测候选后端；不同平台上的自动导出支持范围不同
+- `--list-backends` 中的 `detected` 表示发现了候选程序，但当前平台未必已经实现自动导出
+- CLI 当前通过导出整份 PDF 后再抽取指定页，因此页码以导出后的 PDF 页序为准
+- 如果系统里没有可用的 LibreOffice 兼容后端，请安装 LibreOffice 或用 `--office-bin` 显式指定路径
 
 
 ## 编译指南

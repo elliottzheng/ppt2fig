@@ -3,8 +3,8 @@
 from setuptools import setup
 
 setup(name='ppt2fig',
-      version='1.0.3',
-      description='一键将当前PPT的页面导出为PDF，并自动裁剪白边。',
+      version='1.1.0',
+      description='导出 PowerPoint 页面为 PDF，支持 Windows GUI 和跨平台 CLI。',
       long_description=open('README.md', encoding='utf-8').read(),
       long_description_content_type='text/markdown',
       author='Elliot Zheng',
@@ -17,8 +17,9 @@ setup(name='ppt2fig',
            ]
       },
       install_requires=[
-          'comtypes',
+          'comtypes; platform_system=="Windows"',
           'pdfCropMargins',
+          'pypdf',
       ],
       classifiers=[
           'Programming Language :: Python :: 3',
