@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import tkinter as tk
+import ctypes
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -14,6 +15,27 @@ from .i18n import DEFAULT_LANGUAGE, get_translator
 
 FILE_MODE_HISTORY_PATH = Path.home() / ".ppt2fig_file_history.json"
 MAX_HISTORY_ITEMS = 16
+
+
+def _enable_high_dpi_support():
+    if os.name != "nt":
+        return
+
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
+def _fit_window(root, *, min_width, min_height, width_padding=48, height_padding=56):
+    root.update_idletasks()
+    width = max(min_width, root.winfo_reqwidth() + width_padding)
+    height = max(min_height, root.winfo_reqheight() + height_padding)
+    root.geometry(f"{width}x{height}")
+    root.minsize(width, height)
 
 
 def _load_file_mode_history():
@@ -100,9 +122,10 @@ def _make_output_path(source_text, pages_text, *, lang=DEFAULT_LANGUAGE):
 
 
 def main():
+    _enable_high_dpi_support()
     root = tk.Tk()
-    root.geometry("1020x730")
-    root.minsize(960, 680)
+    root.geometry("1120x820")
+    root.minsize(1120, 820)
 
     source_var = tk.StringVar()
     pages_var = tk.StringVar(value="1")
@@ -662,6 +685,7 @@ def main():
     set_status("gui.file.status.ready")
     update_dynamic_state()
     update_texts()
+    _fit_window(root, min_width=1120, min_height=820)
     root.mainloop()
 
 

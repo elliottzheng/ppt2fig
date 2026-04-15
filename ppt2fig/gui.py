@@ -1,6 +1,7 @@
 import os
 import platform
 import tkinter as tk
+import ctypes
 from tkinter import filedialog, messagebox, ttk
 
 from . import __version__
@@ -11,6 +12,26 @@ from .core import (
     get_active_presentation_info,
 )
 from .i18n import DEFAULT_LANGUAGE, get_translator
+
+
+def _enable_high_dpi_support():
+    if os.name != "nt":
+        return
+
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+
+def _fit_window(root, *, min_width, min_height):
+    root.update_idletasks()
+    width = max(min_width, root.winfo_reqwidth() + 24)
+    height = max(min_height, root.winfo_reqheight() + 32)
+    root.geometry(f"{width}x{height}")
 
 
 def _apply_crop_preset(percent_var, margin_var, preset_type):
@@ -141,6 +162,7 @@ def _build_crop_settings(parent, *, no_crop, margin_size, percent_retain, use_un
 
 
 def main():
+    _enable_high_dpi_support()
     root = tk.Tk()
     default_path_map = {}
 
@@ -154,7 +176,7 @@ def main():
     show_advanced = tk.BooleanVar(value=False)
 
     root.attributes("-topmost", True)
-    root.geometry("360x130")
+    root.geometry("400x160")
     root.resizable(False, False)
 
     main_frame = tk.Frame(root)
@@ -235,10 +257,10 @@ def main():
     def toggle_advanced():
         if show_advanced.get():
             advanced_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-            root.geometry("390x410")
+            _fit_window(root, min_width=440, min_height=460)
         else:
             advanced_frame.pack_forget()
-            root.geometry("360x130")
+            _fit_window(root, min_width=400, min_height=160)
         update_texts()
 
     def hello_callback():
@@ -296,6 +318,7 @@ def main():
 
     language_select.bind("<<ComboboxSelected>>", lambda _event: update_texts())
     update_texts()
+    _fit_window(root, min_width=400, min_height=160)
     root.mainloop()
 
 
