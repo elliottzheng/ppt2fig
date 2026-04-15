@@ -539,7 +539,8 @@ def main():
                 threshold=threshold_var.get(),
             )
         except Exception as exc:
-            root.after(0, lambda: on_export_failure(str(exc)))
+            error_text = str(exc)
+            root.after(0, lambda error_text=error_text: on_export_failure(error_text))
             return
 
         root.after(0, on_export_success)
