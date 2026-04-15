@@ -34,6 +34,16 @@ def _fit_window(root, *, min_width, min_height):
     root.geometry(f"{width}x{height}")
 
 
+def _quick_gui_min_size(lang, show_advanced):
+    if show_advanced:
+        if lang == "en":
+            return 620, 520
+        return 440, 460
+    if lang == "en":
+        return 520, 180
+    return 400, 160
+
+
 def _apply_crop_preset(percent_var, margin_var, preset_type):
     if preset_type == "tight":
         percent_var.set(0)
@@ -176,7 +186,8 @@ def main():
     show_advanced = tk.BooleanVar(value=False)
 
     root.attributes("-topmost", True)
-    root.geometry("400x160")
+    initial_width, initial_height = _quick_gui_min_size(DEFAULT_LANGUAGE, False)
+    root.geometry(f"{initial_width}x{initial_height}")
     root.resizable(False, False)
 
     main_frame = tk.Frame(root)
@@ -243,6 +254,7 @@ def main():
 
     def update_texts():
         current = translator()
+        min_width, min_height = _quick_gui_min_size(language_var.get(), show_advanced.get())
         root.title(current("gui.quick.title", version=__version__))
         language_label.config(text=current("lang.label"))
         convert_button.config(text=current("gui.quick.export_button"))
@@ -253,14 +265,13 @@ def main():
         )
         for widget, key in advanced_text_widgets.values():
             widget.config(text=current(key))
+        _fit_window(root, min_width=min_width, min_height=min_height)
 
     def toggle_advanced():
         if show_advanced.get():
             advanced_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
-            _fit_window(root, min_width=440, min_height=460)
         else:
             advanced_frame.pack_forget()
-            _fit_window(root, min_width=400, min_height=160)
         update_texts()
 
     def hello_callback():
@@ -318,7 +329,7 @@ def main():
 
     language_select.bind("<<ComboboxSelected>>", lambda _event: update_texts())
     update_texts()
-    _fit_window(root, min_width=400, min_height=160)
+    _fit_window(root, min_width=initial_width, min_height=initial_height)
     root.mainloop()
 
 

@@ -38,6 +38,12 @@ def _fit_window(root, *, min_width, min_height, width_padding=48, height_padding
     root.minsize(width, height)
 
 
+def _file_gui_min_size(lang):
+    if lang == "en":
+        return 1280, 920
+    return 1120, 820
+
+
 def _load_file_mode_history():
     try:
         if not FILE_MODE_HISTORY_PATH.exists():
@@ -124,8 +130,9 @@ def _make_output_path(source_text, pages_text, *, lang=DEFAULT_LANGUAGE):
 def main():
     _enable_high_dpi_support()
     root = tk.Tk()
-    root.geometry("1120x820")
-    root.minsize(1120, 820)
+    initial_width, initial_height = _file_gui_min_size(DEFAULT_LANGUAGE)
+    root.geometry(f"{initial_width}x{initial_height}")
+    root.minsize(initial_width, initial_height)
 
     source_var = tk.StringVar()
     pages_var = tk.StringVar(value="1")
@@ -189,7 +196,7 @@ def main():
     )
     language_select.pack(side=tk.LEFT, padx=(8, 0))
 
-    subtitle_label = ttk.Label(header, foreground="#555555", wraplength=920, justify=tk.LEFT)
+    subtitle_label = ttk.Label(header, foreground="#555555", wraplength=1080, justify=tk.LEFT)
     subtitle_label.pack(anchor="w", pady=(6, 0))
 
     body = ttk.PanedWindow(outer, orient=tk.HORIZONTAL)
@@ -202,7 +209,7 @@ def main():
 
     history_title_label = ttk.Label(history_panel, font=("Microsoft YaHei UI", 11, "bold"))
     history_title_label.pack(anchor="w")
-    history_subtitle_label = ttk.Label(history_panel, foreground="#666666", wraplength=250, justify=tk.LEFT)
+    history_subtitle_label = ttk.Label(history_panel, foreground="#666666", wraplength=320, justify=tk.LEFT)
     history_subtitle_label.pack(anchor="w", pady=(2, 8))
 
     history_list = tk.Listbox(history_panel, activestyle="none", height=18)
@@ -359,7 +366,7 @@ def main():
 
     footer = ttk.Frame(form_panel)
     footer.pack(fill=tk.X, pady=(12, 0))
-    ttk.Label(footer, textvariable=status_var, foreground="#444444", justify=tk.LEFT, wraplength=650).pack(
+    ttk.Label(footer, textvariable=status_var, foreground="#444444", justify=tk.LEFT, wraplength=860).pack(
         side=tk.LEFT, fill=tk.X, expand=True
     )
     export_button = ttk.Button(footer)
@@ -609,6 +616,7 @@ def main():
 
     def update_texts():
         current = translator()
+        min_width, min_height = _file_gui_min_size(language_var.get())
         root.title(current("gui.file.title", version=__version__))
         language_label.config(text=current("lang.label"))
         title_label.config(text=current("gui.file.header_title"))
@@ -655,6 +663,7 @@ def main():
         refresh_history_list(selected_history_index["value"])
         refresh_backends(verbose=False)
         status_var.set(current(status_state["key"], **status_state["kwargs"]))
+        _fit_window(root, min_width=min_width, min_height=min_height, width_padding=72, height_padding=72)
 
     load_button.config(command=lambda: apply_history_item(get_selected_history_item()))
     rerun_button.config(command=lambda: start_export(from_history=True))
@@ -685,7 +694,7 @@ def main():
     set_status("gui.file.status.ready")
     update_dynamic_state()
     update_texts()
-    _fit_window(root, min_width=1120, min_height=820)
+    _fit_window(root, min_width=initial_width, min_height=initial_height, width_padding=72, height_padding=72)
     root.mainloop()
 
 
