@@ -475,7 +475,7 @@ def main():
             except Exception:
                 pass
 
-    def validate_form():
+    def collect_export_settings():
         current = translator()
         source = source_var.get().strip()
         if not source:
@@ -483,67 +483,85 @@ def main():
         path = Path(source).resolve()
         if not path.exists():
             raise ValueError(current("gui.file.error.input_not_found"))
-        pages = parse_page_range(pages_var.get().strip(), lang=language_var.get())
+        pages_text = pages_var.get().strip()
+        lang = language_var.get()
+        pages = parse_page_range(pages_text, lang=lang)
         output = output_var.get().strip()
         if not output:
-            output = _make_output_path(source, pages_var.get().strip(), lang=language_var.get())
+            output = _make_output_path(source, pages_text, lang=lang)
             output_var.set(output)
-        return path, pages, output
+        return {
+            "source": path,
+            "source_text": source,
+            "pages": pages,
+            "pages_text": pages_text,
+            "output": output,
+            "backend": backend_var.get(),
+            "office_bin": office_bin_var.get().strip() or None,
+            "powerpoint_intent": powerpoint_intent_var.get(),
+            "bitmap_missing_fonts": bitmap_missing_fonts_var.get(),
+            "no_crop": no_crop_var.get(),
+            "percent_retain": percent_retain_var.get(),
+            "margin_size": margin_size_var.get(),
+            "use_uniform": use_uniform_var.get(),
+            "use_same_size": use_same_size_var.get(),
+            "threshold": threshold_var.get(),
+            "lang": lang,
+        }
 
-    def on_export_success():
+    def on_export_success(settings):
         history_items[:] = _record_current_settings(
             history_items,
-            source=source_var.get(),
-            pages=pages_var.get(),
-            output=output_var.get(),
-            backend=backend_var.get(),
-            office_bin=office_bin_var.get(),
-            powerpoint_intent=powerpoint_intent_var.get(),
-            bitmap_missing_fonts=bitmap_missing_fonts_var.get(),
-            no_crop=no_crop_var.get(),
-            percent_retain=percent_retain_var.get(),
-            margin_size=margin_size_var.get(),
-            use_uniform=use_uniform_var.get(),
-            use_same_size=use_same_size_var.get(),
-            threshold=threshold_var.get(),
+            source=settings["source_text"],
+            pages=settings["pages_text"],
+            output=settings["output"],
+            backend=settings["backend"],
+            office_bin=settings["office_bin"] or "",
+            powerpoint_intent=settings["powerpoint_intent"],
+            bitmap_missing_fonts=settings["bitmap_missing_fonts"],
+            no_crop=settings["no_crop"],
+            percent_retain=settings["percent_retain"],
+            margin_size=settings["margin_size"],
+            use_uniform=settings["use_uniform"],
+            use_same_size=settings["use_same_size"],
+            threshold=settings["threshold"],
         )
         _save_file_mode_history(history_items)
         refresh_history_list(0)
-        set_status("gui.file.status.export_done", path=output_var.get())
+        set_status("gui.file.status.export_done", path=settings["output"])
         exporting["active"] = False
         export_button.configure(state=tk.NORMAL)
         current = translator()
         messagebox.showinfo(
             current("common.success"),
-            current("gui.quick.success_message", path=output_var.get()),
+            current("gui.quick.success_message", path=settings["output"]),
             parent=root,
         )
 
-    def run_export():
+    def run_export(settings):
         try:
-            source, pages, output = validate_form()
             export_selected_pages(
-                source,
-                output,
-                pages,
-                lang=language_var.get(),
-                backend=backend_var.get(),
-                office_bin=office_bin_var.get().strip() or None,
-                powerpoint_intent=powerpoint_intent_var.get(),
-                bitmap_missing_fonts=bitmap_missing_fonts_var.get(),
-                no_crop=no_crop_var.get(),
-                percent_retain=percent_retain_var.get(),
-                margin_size=margin_size_var.get(),
-                use_uniform=use_uniform_var.get(),
-                use_same_size=use_same_size_var.get(),
-                threshold=threshold_var.get(),
+                settings["source"],
+                settings["output"],
+                settings["pages"],
+                lang=settings["lang"],
+                backend=settings["backend"],
+                office_bin=settings["office_bin"],
+                powerpoint_intent=settings["powerpoint_intent"],
+                bitmap_missing_fonts=settings["bitmap_missing_fonts"],
+                no_crop=settings["no_crop"],
+                percent_retain=settings["percent_retain"],
+                margin_size=settings["margin_size"],
+                use_uniform=settings["use_uniform"],
+                use_same_size=settings["use_same_size"],
+                threshold=settings["threshold"],
             )
         except Exception as exc:
             error_text = str(exc)
             root.after(0, lambda error_text=error_text: on_export_failure(error_text))
             return
 
-        root.after(0, on_export_success)
+        root.after(0, lambda settings=settings: on_export_success(settings))
 
     def on_export_failure(error_text):
         exporting["active"] = False
@@ -556,10 +574,15 @@ def main():
             return
         if from_history:
             apply_history_item(get_selected_history_item())
+        try:
+            settings = collect_export_settings()
+        except Exception as exc:
+            on_export_failure(str(exc))
+            return
         exporting["active"] = True
         export_button.configure(state=tk.DISABLED)
         set_status("gui.file.status.exporting")
-        threading.Thread(target=run_export, daemon=True).start()
+        threading.Thread(target=run_export, args=(settings,), daemon=True).start()
 
     def update_texts():
         current = translator()
