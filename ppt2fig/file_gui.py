@@ -367,9 +367,11 @@ def main():
     footer = ttk.Frame(form_panel)
     footer.pack(fill=tk.X, pady=(12, 0))
     ttk.Label(footer, textvariable=status_var, foreground="#444444", justify=tk.LEFT, wraplength=860).pack(
-        side=tk.LEFT, fill=tk.X, expand=True
+        fill=tk.X, expand=True, anchor="w"
     )
-    export_button = ttk.Button(footer)
+    footer_actions = ttk.Frame(footer)
+    footer_actions.pack(fill=tk.X, pady=(10, 0))
+    export_button = ttk.Button(footer_actions)
     export_button.pack(side=tk.RIGHT)
 
     def refresh_history_list(select_index=None):
