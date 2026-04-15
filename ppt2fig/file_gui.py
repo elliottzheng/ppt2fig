@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, ttk
 from . import __version__
 from .cli import default_output_path
 from .core import detect_backends, export_selected_pages, parse_page_range
+from .i18n import DEFAULT_LANGUAGE, get_translator
 
 
 FILE_MODE_HISTORY_PATH = Path.home() / ".ppt2fig_file_history.json"
@@ -37,15 +38,15 @@ def _save_file_mode_history(items):
         pass
 
 
-def _history_label(item):
+def _history_label(item, translator):
     source = item.get("source", "")
-    name = Path(source).name if source else "未命名"
+    name = Path(source).name if source else translator("gui.file.history_untitled")
     pages = item.get("pages", "")
     backend = item.get("backend", "auto")
     updated_at = item.get("updated_at", "")
     short_time = updated_at[5:16].replace("T", " ") if len(updated_at) >= 16 else ""
     prefix = f"[{short_time}] " if short_time else ""
-    return f"{prefix}{name} | 页码 {pages} | {backend}"
+    return translator("gui.file.history_label", prefix=prefix, name=name, pages=pages, backend=backend)
 
 
 def _record_current_settings(
@@ -92,17 +93,16 @@ def _record_current_settings(
     return filtered[:MAX_HISTORY_ITEMS]
 
 
-def _make_output_path(source_text, pages_text):
+def _make_output_path(source_text, pages_text, *, lang=DEFAULT_LANGUAGE):
     source = Path(source_text).resolve()
-    pages = parse_page_range(pages_text)
+    pages = parse_page_range(pages_text, lang=lang)
     return str(default_output_path(source, pages))
 
 
 def main():
     root = tk.Tk()
-    root.title(f"PPT2Fig 文件模式 v{__version__}")
-    root.geometry("980x690")
-    root.minsize(920, 640)
+    root.geometry("1020x730")
+    root.minsize(960, 680)
 
     source_var = tk.StringVar()
     pages_var = tk.StringVar(value="1")
@@ -118,14 +118,26 @@ def main():
     use_same_size_var = tk.BooleanVar(value=True)
     threshold_var = tk.IntVar(value=191)
     auto_output_var = tk.BooleanVar(value=True)
-    status_var = tk.StringVar(value="选择文件后即可导出，常用配置会自动进入左侧历史记录。")
-    backend_status_var = tk.StringVar(value="未检测后端")
+    language_var = tk.StringVar(value=DEFAULT_LANGUAGE)
+    status_var = tk.StringVar()
+    backend_status_var = tk.StringVar()
+
     exporting = {"active": False}
     history_items = _load_file_mode_history()
+    selected_history_index = {"value": None}
+    status_state = {"key": "gui.file.status.ready", "kwargs": {}}
 
     style = ttk.Style()
     if "vista" in style.theme_names():
         style.theme_use("vista")
+
+    def translator():
+        return get_translator(language_var.get())
+
+    def set_status(key, **kwargs):
+        status_state["key"] = key
+        status_state["kwargs"] = kwargs
+        status_var.set(translator()(key, **kwargs))
 
     outer = ttk.Frame(root, padding=14)
     outer.pack(fill=tk.BOTH, expand=True)
@@ -134,13 +146,28 @@ def main():
     header.pack(fill=tk.X, pady=(0, 10))
     title_row = ttk.Frame(header)
     title_row.pack(fill=tk.X)
-    ttk.Label(title_row, text="PPT2Fig 文件模式", font=("Microsoft YaHei UI", 14, "bold")).pack(anchor="w", side=tk.LEFT)
-    ttk.Label(title_row, text=f"v{__version__}", foreground="#666666").pack(anchor="e", side=tk.RIGHT)
-    ttk.Label(
-        header,
-        text="面向重复导出场景：左侧保留最近任务，右侧编辑当前配置。",
-        foreground="#555555",
-    ).pack(anchor="w", pady=(2, 0))
+
+    title_label = ttk.Label(title_row, font=("Microsoft YaHei UI", 14, "bold"))
+    title_label.pack(anchor="w", side=tk.LEFT)
+
+    version_label = ttk.Label(title_row, text=f"v{__version__}", foreground="#666666")
+    version_label.pack(anchor="e", side=tk.RIGHT)
+
+    language_row = ttk.Frame(header)
+    language_row.pack(fill=tk.X, pady=(6, 0))
+    language_label = ttk.Label(language_row)
+    language_label.pack(side=tk.LEFT)
+    language_select = ttk.Combobox(
+        language_row,
+        textvariable=language_var,
+        values=("zh", "en"),
+        state="readonly",
+        width=6,
+    )
+    language_select.pack(side=tk.LEFT, padx=(8, 0))
+
+    subtitle_label = ttk.Label(header, foreground="#555555", wraplength=920, justify=tk.LEFT)
+    subtitle_label.pack(anchor="w", pady=(6, 0))
 
     body = ttk.PanedWindow(outer, orient=tk.HORIZONTAL)
     body.pack(fill=tk.BOTH, expand=True)
@@ -150,12 +177,10 @@ def main():
     form_panel = ttk.Frame(body)
     body.add(form_panel, weight=72)
 
-    ttk.Label(history_panel, text="最近任务", font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
-    ttk.Label(
-        history_panel,
-        text="双击可直接重导，单击后可载入到右侧编辑。",
-        foreground="#666666",
-    ).pack(anchor="w", pady=(2, 8))
+    history_title_label = ttk.Label(history_panel, font=("Microsoft YaHei UI", 11, "bold"))
+    history_title_label.pack(anchor="w")
+    history_subtitle_label = ttk.Label(history_panel, foreground="#666666", wraplength=250, justify=tk.LEFT)
+    history_subtitle_label.pack(anchor="w", pady=(2, 8))
 
     history_list = tk.Listbox(history_panel, activestyle="none", height=18)
     history_list.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
@@ -165,15 +190,168 @@ def main():
 
     history_actions = ttk.Frame(history_panel)
     history_actions.pack(fill=tk.X, pady=(8, 0))
+    load_button = ttk.Button(history_actions)
+    load_button.pack(side=tk.LEFT)
+    rerun_button = ttk.Button(history_actions)
+    rerun_button.pack(side=tk.LEFT, padx=6)
+    delete_button = ttk.Button(history_actions)
+    delete_button.pack(side=tk.LEFT)
 
-    selected_history_index = {"value": None}
+    current_label = ttk.Label(form_panel, font=("Microsoft YaHei UI", 11, "bold"))
+    current_label.pack(anchor="w")
 
-    def refresh_history_list(select_index=0):
+    quick_actions = ttk.Frame(form_panel)
+    quick_actions.pack(fill=tk.X, pady=(6, 10))
+    choose_file_button = ttk.Button(quick_actions)
+    choose_file_button.pack(side=tk.LEFT)
+    same_dir_button = ttk.Button(quick_actions)
+    same_dir_button.pack(side=tk.LEFT, padx=6)
+    refresh_backends_button = ttk.Button(quick_actions)
+    refresh_backends_button.pack(side=tk.LEFT, padx=6)
+    auto_output_check = ttk.Checkbutton(quick_actions, variable=auto_output_var)
+    auto_output_check.pack(side=tk.RIGHT)
+
+    basic_frame = ttk.LabelFrame(form_panel, padding=12)
+    basic_frame.pack(fill=tk.X)
+    basic_frame.columnconfigure(1, weight=1)
+
+    source_label = ttk.Label(basic_frame)
+    source_label.grid(row=0, column=0, sticky="w", pady=5)
+    ttk.Entry(basic_frame, textvariable=source_var).grid(row=0, column=1, sticky="ew", padx=8, pady=5)
+    source_browse_button = ttk.Button(basic_frame)
+    source_browse_button.grid(row=0, column=2, sticky="e", pady=5)
+
+    pages_label = ttk.Label(basic_frame)
+    pages_label.grid(row=1, column=0, sticky="w", pady=5)
+    pages_row = ttk.Frame(basic_frame)
+    pages_row.grid(row=1, column=1, sticky="ew", padx=8, pady=5)
+    pages_row.columnconfigure(0, weight=1)
+    ttk.Entry(pages_row, textvariable=pages_var).grid(row=0, column=0, sticky="ew")
+    pages_hint_label = ttk.Label(pages_row, foreground="#666666")
+    pages_hint_label.grid(row=0, column=1, sticky="w", padx=(8, 0))
+    first_page_button = ttk.Button(basic_frame, command=lambda: pages_var.set("1"))
+    first_page_button.grid(row=1, column=2, sticky="e", pady=5)
+
+    output_label = ttk.Label(basic_frame)
+    output_label.grid(row=2, column=0, sticky="w", pady=5)
+    ttk.Entry(basic_frame, textvariable=output_var).grid(row=2, column=1, sticky="ew", padx=8, pady=5)
+    output_browse_button = ttk.Button(basic_frame)
+    output_browse_button.grid(row=2, column=2, sticky="e", pady=5)
+
+    backend_frame = ttk.LabelFrame(form_panel, padding=12)
+    backend_frame.pack(fill=tk.X, pady=(10, 0))
+    backend_frame.columnconfigure(1, weight=1)
+
+    backend_label = ttk.Label(backend_frame)
+    backend_label.grid(row=0, column=0, sticky="w", pady=5)
+    backend_select = ttk.Combobox(
+        backend_frame,
+        textvariable=backend_var,
+        values=["auto", "libreoffice", "wps", "powerpoint"],
+        state="readonly",
+    )
+    backend_select.grid(row=0, column=1, sticky="ew", padx=8, pady=5)
+    backend_refresh_button = ttk.Button(backend_frame)
+    backend_refresh_button.grid(row=0, column=2, sticky="e", pady=5)
+
+    program_path_label = ttk.Label(backend_frame)
+    program_path_label.grid(row=1, column=0, sticky="w", pady=5)
+    ttk.Entry(backend_frame, textvariable=office_bin_var).grid(row=1, column=1, sticky="ew", padx=8, pady=5)
+    office_bin_browse_button = ttk.Button(backend_frame)
+    office_bin_browse_button.grid(row=1, column=2, sticky="e", pady=5)
+
+    detection_status_label = ttk.Label(backend_frame)
+    detection_status_label.grid(row=2, column=0, sticky="nw", pady=5)
+    ttk.Label(backend_frame, textvariable=backend_status_var, foreground="#555555", justify=tk.LEFT).grid(
+        row=2, column=1, columnspan=2, sticky="w", padx=8, pady=5
+    )
+
+    powerpoint_frame = ttk.LabelFrame(form_panel, padding=12)
+    powerpoint_frame.pack(fill=tk.X, pady=(10, 0))
+    export_intent_label = ttk.Label(powerpoint_frame)
+    export_intent_label.grid(row=0, column=0, sticky="w", pady=5)
+    powerpoint_intent_select = ttk.Combobox(
+        powerpoint_frame,
+        textvariable=powerpoint_intent_var,
+        values=["print", "screen"],
+        state="readonly",
+        width=14,
+    )
+    powerpoint_intent_select.grid(row=0, column=1, sticky="w", padx=8, pady=5)
+    bitmap_missing_fonts_check = ttk.Checkbutton(powerpoint_frame, variable=bitmap_missing_fonts_var)
+    bitmap_missing_fonts_check.grid(row=0, column=2, sticky="w", pady=5)
+
+    crop_frame = ttk.LabelFrame(form_panel, padding=12)
+    crop_frame.pack(fill=tk.X, pady=(10, 0))
+
+    preset_row = ttk.Frame(crop_frame)
+    preset_row.pack(fill=tk.X, pady=(0, 8))
+    no_crop_check = ttk.Checkbutton(preset_row, variable=no_crop_var)
+    no_crop_check.pack(side=tk.LEFT)
+    tight_crop_button = ttk.Button(
+        preset_row,
+        command=lambda: (percent_retain_var.set(0), margin_size_var.set(0)),
+    )
+    tight_crop_button.pack(side=tk.LEFT, padx=(12, 4))
+    small_margin_button = ttk.Button(
+        preset_row,
+        command=lambda: (percent_retain_var.set(0), margin_size_var.set(3)),
+    )
+    small_margin_button.pack(side=tk.LEFT, padx=4)
+    medium_margin_button = ttk.Button(
+        preset_row,
+        command=lambda: (percent_retain_var.set(0), margin_size_var.set(6)),
+    )
+    medium_margin_button.pack(side=tk.LEFT, padx=4)
+    keep_original_button = ttk.Button(
+        preset_row,
+        command=lambda: (percent_retain_var.set(10), margin_size_var.set(0)),
+    )
+    keep_original_button.pack(side=tk.LEFT, padx=4)
+
+    crop_grid = ttk.Frame(crop_frame)
+    crop_grid.pack(fill=tk.X)
+    crop_grid.columnconfigure(1, weight=1)
+    crop_grid.columnconfigure(3, weight=1)
+
+    percent_label = ttk.Label(crop_grid)
+    percent_label.grid(row=0, column=0, sticky="w", pady=4)
+    percent_spin = ttk.Spinbox(crop_grid, from_=0, to=100, increment=1, textvariable=percent_retain_var, width=10)
+    percent_spin.grid(row=0, column=1, sticky="w", padx=(8, 20), pady=4)
+
+    margin_label = ttk.Label(crop_grid)
+    margin_label.grid(row=0, column=2, sticky="w", pady=4)
+    margin_spin = ttk.Spinbox(crop_grid, from_=0, to=50, increment=0.5, textvariable=margin_size_var, width=10)
+    margin_spin.grid(row=0, column=3, sticky="w", padx=8, pady=4)
+
+    threshold_label = ttk.Label(crop_grid)
+    threshold_label.grid(row=1, column=0, sticky="w", pady=4)
+    threshold_spin = ttk.Spinbox(crop_grid, from_=0, to=255, increment=1, textvariable=threshold_var, width=10)
+    threshold_spin.grid(row=1, column=1, sticky="w", padx=(8, 20), pady=4)
+
+    uniform_check = ttk.Checkbutton(crop_grid, variable=use_uniform_var)
+    uniform_check.grid(row=1, column=2, sticky="w", pady=4)
+    same_size_check = ttk.Checkbutton(crop_grid, variable=use_same_size_var)
+    same_size_check.grid(row=1, column=3, sticky="w", padx=8, pady=4)
+
+    footer = ttk.Frame(form_panel)
+    footer.pack(fill=tk.X, pady=(12, 0))
+    ttk.Label(footer, textvariable=status_var, foreground="#444444", justify=tk.LEFT, wraplength=650).pack(
+        side=tk.LEFT, fill=tk.X, expand=True
+    )
+    export_button = ttk.Button(footer)
+    export_button.pack(side=tk.RIGHT)
+
+    def refresh_history_list(select_index=None):
         history_list.delete(0, tk.END)
+        current = translator()
         for item in history_items:
-            history_list.insert(tk.END, _history_label(item))
+            history_list.insert(tk.END, _history_label(item, current))
         if history_items:
-            idx = min(select_index, len(history_items) - 1)
+            idx = selected_history_index["value"] if select_index is None else select_index
+            if idx is None:
+                idx = 0
+            idx = min(max(idx, 0), len(history_items) - 1)
             history_list.selection_clear(0, tk.END)
             history_list.selection_set(idx)
             history_list.activate(idx)
@@ -190,6 +368,29 @@ def main():
         if 0 <= idx < len(history_items):
             return history_items[idx]
         return None
+
+    def update_dynamic_state(*_args):
+        crop_enabled = not no_crop_var.get()
+        state = tk.NORMAL if crop_enabled else tk.DISABLED
+        for widget in (percent_spin, margin_spin, threshold_spin):
+            widget.configure(state=state)
+        for widget in (uniform_check, same_size_check):
+            widget.configure(state=tk.NORMAL if crop_enabled else tk.DISABLED)
+
+        is_powerpoint = backend_var.get() == "powerpoint"
+        powerpoint_intent_select.configure(state="readonly" if is_powerpoint else tk.DISABLED)
+        bitmap_missing_fonts_check.configure(state=tk.NORMAL if is_powerpoint else tk.DISABLED)
+
+    def refresh_backends(verbose=False):
+        current = translator()
+        labels = []
+        for backend in detect_backends(explicit_path=office_bin_var.get() or None, lang=language_var.get()):
+            mark = current("cli.backend.supported") if backend.supported else current("cli.backend.detected")
+            detail = f" - {backend.detail}" if backend.detail else ""
+            labels.append(f"{backend.name} ({mark}){detail}")
+        backend_status_var.set("\n".join(labels) if labels else current("gui.file.backend_none_detected"))
+        if verbose:
+            set_status("gui.file.status.refreshed_backends")
 
     def apply_history_item(item):
         if not item:
@@ -209,7 +410,7 @@ def main():
         threshold_var.set(int(item.get("threshold", 191)))
         auto_output_var.set(False)
         update_dynamic_state()
-        status_var.set("已载入历史任务，可直接修改后重新导出。")
+        set_status("gui.file.status.loaded_history")
 
     def delete_history_item():
         item = get_selected_history_item()
@@ -219,50 +420,35 @@ def main():
         del history_items[idx]
         _save_file_mode_history(history_items)
         refresh_history_list(max(0, idx - 1))
-        status_var.set("已删除一条历史任务。")
-
-    ttk.Button(history_actions, text="载入", command=lambda: apply_history_item(get_selected_history_item())).pack(
-        side=tk.LEFT
-    )
-    ttk.Button(history_actions, text="重导", command=lambda: start_export(from_history=True)).pack(
-        side=tk.LEFT, padx=6
-    )
-    ttk.Button(history_actions, text="删除", command=delete_history_item).pack(side=tk.LEFT)
-
-    history_list.bind("<<ListboxSelect>>", lambda _event: get_selected_history_item())
-    history_list.bind(
-        "<Double-Button-1>",
-        lambda _event: (apply_history_item(get_selected_history_item()), start_export(from_history=True)),
-    )
-
-    current_label = ttk.Label(form_panel, text="当前配置", font=("Microsoft YaHei UI", 11, "bold"))
-    current_label.pack(anchor="w")
-
-    quick_actions = ttk.Frame(form_panel)
-    quick_actions.pack(fill=tk.X, pady=(6, 10))
+        set_status("gui.file.status.deleted_history")
 
     def choose_source():
+        current = translator()
         selected = filedialog.askopenfilename(
             parent=root,
-            title="选择输入文件",
-            filetypes=[("Presentation", "*.pptx *.ppt *.odp"), ("All files", "*.*")],
+            title=current("gui.file.dialog.select_input"),
+            filetypes=[
+                (current("common.filetype.presentation"), "*.pptx *.ppt *.odp"),
+                (current("common.filetype.all_files"), "*.*"),
+            ],
         )
         if not selected:
             return
         source_var.set(selected)
         if auto_output_var.get():
             try:
-                output_var.set(_make_output_path(selected, pages_var.get()))
+                output_var.set(_make_output_path(selected, pages_var.get(), lang=language_var.get()))
             except Exception:
                 pass
-        status_var.set("已选择输入文件。")
+        set_status("gui.file.status.selected_file")
 
     def choose_output():
+        current = translator()
         selected = filedialog.asksaveasfilename(
             parent=root,
-            title="选择输出 PDF",
+            title=current("gui.file.dialog.select_output"),
             defaultextension=".pdf",
-            filetypes=[("PDF file", "*.pdf")],
+            filetypes=[(current("common.filetype.pdf"), "*.pdf")],
             initialfile=os.path.basename(output_var.get()) if output_var.get() else "",
             initialdir=os.path.dirname(output_var.get()) if output_var.get() else "",
         )
@@ -271,7 +457,8 @@ def main():
             auto_output_var.set(False)
 
     def choose_office_bin():
-        selected = filedialog.askopenfilename(parent=root, title="选择后端可执行文件")
+        current = translator()
+        selected = filedialog.askopenfilename(parent=root, title=current("gui.file.dialog.select_backend_bin"))
         if selected:
             office_bin_var.set(selected)
             refresh_backends()
@@ -279,223 +466,29 @@ def main():
     def set_output_from_input():
         if not source_var.get():
             return
-        output_var.set(_make_output_path(source_var.get(), pages_var.get()))
-
-    ttk.Button(quick_actions, text="选择文件", command=choose_source).pack(side=tk.LEFT)
-    ttk.Button(quick_actions, text="输出同目录", command=set_output_from_input).pack(side=tk.LEFT, padx=6)
-    ttk.Button(quick_actions, text="刷新后端", command=lambda: refresh_backends(verbose=True)).pack(
-        side=tk.LEFT, padx=6
-    )
-    ttk.Checkbutton(
-        quick_actions,
-        text="自动生成输出文件名",
-        variable=auto_output_var,
-        command=lambda: set_output_from_input() if auto_output_var.get() and source_var.get() else None,
-    ).pack(side=tk.RIGHT)
-
-    basic_frame = ttk.LabelFrame(form_panel, text="基础信息", padding=12)
-    basic_frame.pack(fill=tk.X)
-    basic_frame.columnconfigure(1, weight=1)
-
-    ttk.Label(basic_frame, text="输入文件").grid(row=0, column=0, sticky="w", pady=5)
-    ttk.Entry(basic_frame, textvariable=source_var).grid(row=0, column=1, sticky="ew", padx=8, pady=5)
-    ttk.Button(basic_frame, text="浏览", command=choose_source).grid(row=0, column=2, sticky="e", pady=5)
-
-    ttk.Label(basic_frame, text="页码").grid(row=1, column=0, sticky="w", pady=5)
-    pages_row = ttk.Frame(basic_frame)
-    pages_row.grid(row=1, column=1, sticky="ew", padx=8, pady=5)
-    pages_row.columnconfigure(0, weight=1)
-    ttk.Entry(pages_row, textvariable=pages_var).grid(row=0, column=0, sticky="ew")
-    ttk.Label(pages_row, text="支持 1,3,5-7", foreground="#666666").grid(row=0, column=1, sticky="w", padx=(8, 0))
-    ttk.Button(basic_frame, text="第一页", command=lambda: pages_var.set("1")).grid(row=1, column=2, sticky="e", pady=5)
-
-    ttk.Label(basic_frame, text="输出 PDF").grid(row=2, column=0, sticky="w", pady=5)
-    ttk.Entry(basic_frame, textvariable=output_var).grid(row=2, column=1, sticky="ew", padx=8, pady=5)
-    ttk.Button(basic_frame, text="浏览", command=choose_output).grid(row=2, column=2, sticky="e", pady=5)
-
-    backend_frame = ttk.LabelFrame(form_panel, text="导出后端", padding=12)
-    backend_frame.pack(fill=tk.X, pady=(10, 0))
-    backend_frame.columnconfigure(1, weight=1)
-
-    ttk.Label(backend_frame, text="后端").grid(row=0, column=0, sticky="w", pady=5)
-    backend_select = ttk.Combobox(
-        backend_frame,
-        textvariable=backend_var,
-        values=["auto", "libreoffice", "wps", "powerpoint"],
-        state="readonly",
-    )
-    backend_select.grid(row=0, column=1, sticky="ew", padx=8, pady=5)
-    ttk.Button(backend_frame, text="刷新", command=lambda: refresh_backends(verbose=True)).grid(
-        row=0, column=2, sticky="e", pady=5
-    )
-
-    ttk.Label(backend_frame, text="程序路径").grid(row=1, column=0, sticky="w", pady=5)
-    ttk.Entry(backend_frame, textvariable=office_bin_var).grid(row=1, column=1, sticky="ew", padx=8, pady=5)
-    ttk.Button(backend_frame, text="浏览", command=choose_office_bin).grid(row=1, column=2, sticky="e", pady=5)
-
-    ttk.Label(backend_frame, text="检测状态").grid(row=2, column=0, sticky="nw", pady=5)
-    ttk.Label(backend_frame, textvariable=backend_status_var, foreground="#555555", justify=tk.LEFT).grid(
-        row=2, column=1, columnspan=2, sticky="w", padx=8, pady=5
-    )
-
-    powerpoint_frame = ttk.LabelFrame(form_panel, text="PowerPoint 特定选项", padding=12)
-    powerpoint_frame.pack(fill=tk.X, pady=(10, 0))
-
-    ttk.Label(powerpoint_frame, text="导出意图").grid(row=0, column=0, sticky="w", pady=5)
-    powerpoint_intent_select = ttk.Combobox(
-        powerpoint_frame,
-        textvariable=powerpoint_intent_var,
-        values=["print", "screen"],
-        state="readonly",
-        width=14,
-    )
-    powerpoint_intent_select.grid(row=0, column=1, sticky="w", padx=8, pady=5)
-
-    bitmap_missing_fonts_check = ttk.Checkbutton(
-        powerpoint_frame,
-        text="缺字库时将文字位图化",
-        variable=bitmap_missing_fonts_var,
-    )
-    bitmap_missing_fonts_check.grid(row=0, column=2, sticky="w", pady=5)
-
-    crop_frame = ttk.LabelFrame(form_panel, text="裁剪与页面设置", padding=12)
-    crop_frame.pack(fill=tk.X, pady=(10, 0))
-
-    preset_row = ttk.Frame(crop_frame)
-    preset_row.pack(fill=tk.X, pady=(0, 8))
-    ttk.Checkbutton(preset_row, text="不裁剪", variable=no_crop_var).pack(side=tk.LEFT)
-    ttk.Button(
-        preset_row,
-        text="紧密裁剪",
-        command=lambda: (percent_retain_var.set(0), margin_size_var.set(0)),
-    ).pack(side=tk.LEFT, padx=(12, 4))
-    ttk.Button(
-        preset_row,
-        text="小白边",
-        command=lambda: (percent_retain_var.set(0), margin_size_var.set(3)),
-    ).pack(side=tk.LEFT, padx=4)
-    ttk.Button(
-        preset_row,
-        text="中白边",
-        command=lambda: (percent_retain_var.set(0), margin_size_var.set(6)),
-    ).pack(side=tk.LEFT, padx=4)
-    ttk.Button(
-        preset_row,
-        text="保留原边距",
-        command=lambda: (percent_retain_var.set(10), margin_size_var.set(0)),
-    ).pack(side=tk.LEFT, padx=4)
-
-    crop_grid = ttk.Frame(crop_frame)
-    crop_grid.pack(fill=tk.X)
-    crop_grid.columnconfigure(1, weight=1)
-    crop_grid.columnconfigure(3, weight=1)
-
-    ttk.Label(crop_grid, text="保留原边距(%)").grid(row=0, column=0, sticky="w", pady=4)
-    percent_spin = ttk.Spinbox(crop_grid, from_=0, to=100, increment=1, textvariable=percent_retain_var, width=10)
-    percent_spin.grid(row=0, column=1, sticky="w", padx=(8, 20), pady=4)
-
-    ttk.Label(crop_grid, text="额外白边(bp)").grid(row=0, column=2, sticky="w", pady=4)
-    margin_spin = ttk.Spinbox(crop_grid, from_=0, to=50, increment=0.5, textvariable=margin_size_var, width=10)
-    margin_spin.grid(row=0, column=3, sticky="w", padx=8, pady=4)
-
-    ttk.Label(crop_grid, text="检测阈值").grid(row=1, column=0, sticky="w", pady=4)
-    threshold_spin = ttk.Spinbox(crop_grid, from_=0, to=255, increment=1, textvariable=threshold_var, width=10)
-    threshold_spin.grid(row=1, column=1, sticky="w", padx=(8, 20), pady=4)
-
-    uniform_check = ttk.Checkbutton(crop_grid, text="统一裁剪", variable=use_uniform_var)
-    uniform_check.grid(row=1, column=2, sticky="w", pady=4)
-    same_size_check = ttk.Checkbutton(crop_grid, text="统一页面大小", variable=use_same_size_var)
-    same_size_check.grid(row=1, column=3, sticky="w", padx=8, pady=4)
-
-    footer = ttk.Frame(form_panel)
-    footer.pack(fill=tk.X, pady=(12, 0))
-
-    ttk.Label(footer, textvariable=status_var, foreground="#444444", justify=tk.LEFT).pack(
-        side=tk.LEFT, fill=tk.X, expand=True
-    )
-
-    export_button = ttk.Button(footer, text="导出当前配置")
-    export_button.pack(side=tk.RIGHT)
-
-    def update_dynamic_state(*_args):
-        crop_enabled = not no_crop_var.get()
-        state = tk.NORMAL if crop_enabled else tk.DISABLED
-        for widget in (percent_spin, margin_spin, threshold_spin):
-            widget.configure(state=state)
-        for widget in (uniform_check, same_size_check):
-            widget.configure(state=tk.NORMAL if crop_enabled else tk.DISABLED)
-
-        backend = backend_var.get()
-        is_powerpoint = backend == "powerpoint"
-        ppt_state = "readonly" if is_powerpoint else tk.DISABLED
-        powerpoint_intent_select.configure(state=ppt_state)
-        bitmap_missing_fonts_check.configure(state=tk.NORMAL if is_powerpoint else tk.DISABLED)
-
-    def refresh_backends(verbose=False):
-        labels = []
-        for backend in detect_backends(explicit_path=office_bin_var.get() or None):
-            mark = "supported" if backend.supported else "detected"
-            detail = f" - {backend.detail}" if backend.detail else ""
-            labels.append(f"{backend.name} ({mark}){detail}")
-        backend_status_var.set("\n".join(labels) if labels else "未检测到可用后端")
-        if verbose:
-            status_var.set("已刷新后端检测结果。")
+        output_var.set(_make_output_path(source_var.get(), pages_var.get(), lang=language_var.get()))
 
     def on_source_or_pages_changed(*_args):
         if auto_output_var.get() and source_var.get():
             try:
-                output_var.set(_make_output_path(source_var.get(), pages_var.get()))
+                output_var.set(_make_output_path(source_var.get(), pages_var.get(), lang=language_var.get()))
             except Exception:
                 pass
 
     def validate_form():
+        current = translator()
         source = source_var.get().strip()
         if not source:
-            raise ValueError("请选择输入文件")
+            raise ValueError(current("gui.file.error.select_input"))
         path = Path(source).resolve()
         if not path.exists():
-            raise ValueError("输入文件不存在")
-        pages = parse_page_range(pages_var.get().strip())
+            raise ValueError(current("gui.file.error.input_not_found"))
+        pages = parse_page_range(pages_var.get().strip(), lang=language_var.get())
         output = output_var.get().strip()
         if not output:
-            output = _make_output_path(source, pages_var.get().strip())
+            output = _make_output_path(source, pages_var.get().strip(), lang=language_var.get())
             output_var.set(output)
         return path, pages, output
-
-    def run_export():
-        try:
-            source, pages, output = validate_form()
-            export_selected_pages(
-                source,
-                output,
-                pages,
-                backend=backend_var.get(),
-                office_bin=office_bin_var.get().strip() or None,
-                powerpoint_intent=powerpoint_intent_var.get(),
-                bitmap_missing_fonts=bitmap_missing_fonts_var.get(),
-                no_crop=no_crop_var.get(),
-                percent_retain=percent_retain_var.get(),
-                margin_size=margin_size_var.get(),
-                use_uniform=use_uniform_var.get(),
-                use_same_size=use_same_size_var.get(),
-                threshold=threshold_var.get(),
-            )
-        except Exception as exc:
-            root.after(
-                0,
-                lambda: (
-                    status_var.set(f"导出失败: {exc}"),
-                    messagebox.showerror("错误", str(exc), parent=root),
-                    exporting.__setitem__("active", False),
-                    export_button.configure(state=tk.NORMAL),
-                ),
-            )
-            return
-
-        root.after(
-            0,
-            lambda: on_export_success(),
-        )
 
     def on_export_success():
         history_items[:] = _record_current_settings(
@@ -516,10 +509,46 @@ def main():
         )
         _save_file_mode_history(history_items)
         refresh_history_list(0)
-        status_var.set(f"导出完成: {output_var.get()}")
+        set_status("gui.file.status.export_done", path=output_var.get())
         exporting["active"] = False
         export_button.configure(state=tk.NORMAL)
-        messagebox.showinfo("成功", f"PDF已导出至：\n{output_var.get()}", parent=root)
+        current = translator()
+        messagebox.showinfo(
+            current("common.success"),
+            current("gui.quick.success_message", path=output_var.get()),
+            parent=root,
+        )
+
+    def run_export():
+        try:
+            source, pages, output = validate_form()
+            export_selected_pages(
+                source,
+                output,
+                pages,
+                lang=language_var.get(),
+                backend=backend_var.get(),
+                office_bin=office_bin_var.get().strip() or None,
+                powerpoint_intent=powerpoint_intent_var.get(),
+                bitmap_missing_fonts=bitmap_missing_fonts_var.get(),
+                no_crop=no_crop_var.get(),
+                percent_retain=percent_retain_var.get(),
+                margin_size=margin_size_var.get(),
+                use_uniform=use_uniform_var.get(),
+                use_same_size=use_same_size_var.get(),
+                threshold=threshold_var.get(),
+            )
+        except Exception as exc:
+            root.after(0, lambda: on_export_failure(str(exc)))
+            return
+
+        root.after(0, on_export_success)
+
+    def on_export_failure(error_text):
+        exporting["active"] = False
+        export_button.configure(state=tk.NORMAL)
+        set_status("gui.file.status.export_failed", error=error_text)
+        messagebox.showerror(translator()("common.error"), error_text, parent=root)
 
     def start_export(from_history=False):
         if exporting["active"]:
@@ -528,17 +557,89 @@ def main():
             apply_history_item(get_selected_history_item())
         exporting["active"] = True
         export_button.configure(state=tk.DISABLED)
-        status_var.set("正在导出，请稍候...")
+        set_status("gui.file.status.exporting")
         threading.Thread(target=run_export, daemon=True).start()
 
-    export_button.configure(command=start_export)
+    def update_texts():
+        current = translator()
+        root.title(current("gui.file.title", version=__version__))
+        language_label.config(text=current("lang.label"))
+        title_label.config(text=current("gui.file.header_title"))
+        subtitle_label.config(text=current("gui.file.header_subtitle"))
+        history_title_label.config(text=current("gui.file.history_title"))
+        history_subtitle_label.config(text=current("gui.file.history_subtitle"))
+        load_button.config(text=current("common.load"))
+        rerun_button.config(text=current("gui.file.history_rerun"))
+        delete_button.config(text=current("common.delete"))
+        current_label.config(text=current("gui.file.current_title"))
+        choose_file_button.config(text=current("gui.file.choose_file"))
+        same_dir_button.config(text=current("gui.file.output_same_dir"))
+        refresh_backends_button.config(text=current("gui.file.refresh_backends"))
+        auto_output_check.config(text=current("gui.file.auto_output_name"))
+        basic_frame.config(text=current("gui.file.section_basic"))
+        source_label.config(text=current("gui.file.field_source"))
+        source_browse_button.config(text=current("common.browse"))
+        pages_label.config(text=current("gui.file.field_pages"))
+        pages_hint_label.config(text=current("gui.file.pages_hint"))
+        first_page_button.config(text=current("gui.file.first_page"))
+        output_label.config(text=current("gui.file.field_output"))
+        output_browse_button.config(text=current("common.browse"))
+        backend_frame.config(text=current("gui.file.section_backend"))
+        backend_label.config(text=current("gui.file.field_backend"))
+        backend_refresh_button.config(text=current("common.refresh"))
+        program_path_label.config(text=current("gui.file.field_program_path"))
+        office_bin_browse_button.config(text=current("common.browse"))
+        detection_status_label.config(text=current("gui.file.field_detection_status"))
+        powerpoint_frame.config(text=current("gui.file.section_powerpoint"))
+        export_intent_label.config(text=current("gui.file.field_export_intent"))
+        bitmap_missing_fonts_check.config(text=current("gui.file.bitmap_missing_fonts"))
+        crop_frame.config(text=current("gui.file.section_crop"))
+        no_crop_check.config(text=current("gui.crop.no_crop"))
+        tight_crop_button.config(text=current("gui.crop.preset.tight"))
+        small_margin_button.config(text=current("gui.crop.preset.small_margin"))
+        medium_margin_button.config(text=current("gui.crop.preset.medium_margin"))
+        keep_original_button.config(text=current("gui.crop.preset.keep_original"))
+        percent_label.config(text=current("gui.crop.percent").rstrip(":"))
+        margin_label.config(text=current("gui.crop.margin").rstrip(":"))
+        threshold_label.config(text=current("gui.crop.threshold").rstrip(":"))
+        uniform_check.config(text=current("gui.crop.uniform"))
+        same_size_check.config(text=current("gui.crop.same_size"))
+        export_button.config(text=current("gui.file.export_button"))
+        refresh_history_list(selected_history_index["value"])
+        refresh_backends(verbose=False)
+        status_var.set(current(status_state["key"], **status_state["kwargs"]))
 
+    load_button.config(command=lambda: apply_history_item(get_selected_history_item()))
+    rerun_button.config(command=lambda: start_export(from_history=True))
+    delete_button.config(command=delete_history_item)
+    choose_file_button.config(command=choose_source)
+    same_dir_button.config(command=set_output_from_input)
+    refresh_backends_button.config(command=lambda: refresh_backends(verbose=True))
+    source_browse_button.config(command=choose_source)
+    output_browse_button.config(command=choose_output)
+    backend_refresh_button.config(command=lambda: refresh_backends(verbose=True))
+    office_bin_browse_button.config(command=choose_office_bin)
+    export_button.config(command=start_export)
+    auto_output_check.config(
+        command=lambda: set_output_from_input() if auto_output_var.get() and source_var.get() else None
+    )
+
+    history_list.bind("<<ListboxSelect>>", lambda _event: get_selected_history_item())
+    history_list.bind(
+        "<Double-Button-1>",
+        lambda _event: (apply_history_item(get_selected_history_item()), start_export(from_history=True)),
+    )
     source_var.trace_add("write", on_source_or_pages_changed)
     pages_var.trace_add("write", on_source_or_pages_changed)
     backend_var.trace_add("write", update_dynamic_state)
     no_crop_var.trace_add("write", update_dynamic_state)
+    language_select.bind("<<ComboboxSelected>>", lambda _event: update_texts())
 
-    refresh_backends()
-    refresh_history_list()
+    set_status("gui.file.status.ready")
     update_dynamic_state()
+    update_texts()
     root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

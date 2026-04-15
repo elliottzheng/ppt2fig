@@ -3,8 +3,10 @@ import platform
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+
+from .i18n import DEFAULT_LANGUAGE, get_translator
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,8 @@ class BackendInfo:
 
 
 SYSTEM_NAME = platform.system()
+POWERPOINT_NOT_RUNNING = "__PPT2FIG_POWERPOINT_NOT_RUNNING__"
+POWERPOINT_NO_PRESENTATION = "__PPT2FIG_NO_PRESENTATION__"
 
 
 def build_crop_args(
@@ -45,6 +49,7 @@ def build_crop_args(
 def crop_pdf_file(
     pdf_file,
     *,
+    lang=DEFAULT_LANGUAGE,
     no_crop=False,
     percent_retain=0.0,
     margin_size=0.0,
@@ -58,7 +63,7 @@ def crop_pdf_file(
     try:
         from pdfCropMargins import crop
     except ImportError as exc:
-        raise RuntimeError("当前环境缺少 pdfCropMargins，无法执行 PDF 裁剪") from exc
+        raise RuntimeError(get_translator(lang)("core.error.missing_pdfcropmargins")) from exc
 
     pdf_path = Path(pdf_file)
     tmp_output = pdf_path.with_suffix(pdf_path.suffix + ".crop")
@@ -76,9 +81,10 @@ def crop_pdf_file(
     shutil.move(str(tmp_output), str(pdf_path))
 
 
-def parse_page_range(page_spec):
+def parse_page_range(page_spec, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     if not page_spec:
-        raise ValueError("页码不能为空")
+        raise ValueError(translator("core.error.page_empty"))
 
     pages = []
     for raw_part in page_spec.split(","):
@@ -87,21 +93,27 @@ def parse_page_range(page_spec):
             continue
         if "-" in part:
             start_text, end_text = part.split("-", 1)
-            start = int(start_text)
-            end = int(end_text)
+            try:
+                start = int(start_text)
+                end = int(end_text)
+            except ValueError as exc:
+                raise ValueError(translator("core.error.invalid_page_range", part=part)) from exc
             if start <= 0 or end <= 0:
-                raise ValueError("页码必须从 1 开始")
+                raise ValueError(translator("core.error.page_must_start_1"))
             if end < start:
-                raise ValueError(f"无效页码范围: {part}")
+                raise ValueError(translator("core.error.invalid_page_range", part=part))
             pages.extend(range(start, end + 1))
         else:
-            page = int(part)
+            try:
+                page = int(part)
+            except ValueError as exc:
+                raise ValueError(translator("core.error.invalid_page_token", value=part)) from exc
             if page <= 0:
-                raise ValueError("页码必须从 1 开始")
+                raise ValueError(translator("core.error.page_must_start_1"))
             pages.append(page)
 
     if not pages:
-        raise ValueError("没有解析出有效页码")
+        raise ValueError(translator("core.error.no_valid_pages"))
 
     deduplicated = []
     seen = set()
@@ -112,11 +124,12 @@ def parse_page_range(page_spec):
     return deduplicated
 
 
-def extract_pdf_pages(input_pdf, output_pdf, pages):
+def extract_pdf_pages(input_pdf, output_pdf, pages, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     try:
         from pypdf import PdfReader, PdfWriter
     except ImportError as exc:
-        raise RuntimeError("当前环境缺少 pypdf，无法抽取指定页") from exc
+        raise RuntimeError(translator("core.error.missing_pypdf")) from exc
 
     reader = PdfReader(str(input_pdf))
     writer = PdfWriter()
@@ -125,7 +138,11 @@ def extract_pdf_pages(input_pdf, output_pdf, pages):
     for page_number in pages:
         if page_number > total_pages:
             raise ValueError(
-                f"请求的页码 {page_number} 超出范围，导出的 PDF 只有 {total_pages} 页"
+                translator(
+                    "core.error.page_out_of_range",
+                    page_number=page_number,
+                    total_pages=total_pages,
+                )
             )
         writer.add_page(reader.pages[page_number - 1])
 
@@ -245,27 +262,28 @@ def _find_windows_app_path(*exe_names):
     return None
 
 
-def _can_use_powerpoint_com():
+def _can_use_powerpoint_com(*, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     if SYSTEM_NAME == "Windows":
         try:
             import comtypes.client  # noqa: F401
         except ImportError:
-            return False, "当前环境缺少 comtypes"
+            return False, translator("core.detail.missing_comtypes")
 
         try:
             app = comtypes.client.CreateObject("Powerpoint.Application")
             app.Quit()
             return True, ""
         except Exception as exc:
-            return False, f"COM 不可用: {exc}"
+            return False, translator("core.detail.com_unavailable", error=exc)
 
     if SYSTEM_NAME == "Darwin":
         app_path = _find_powerpoint_executable()
         if not app_path:
-            return False, "未检测到 Microsoft PowerPoint.app"
-        return True, "可通过 AppleScript 驱动"
+            return False, translator("core.detail.powerpoint_not_detected_mac")
+        return True, translator("core.detail.powerpoint_applescript")
 
-    return False, "当前系统不支持 PowerPoint CLI 导出"
+    return False, translator("core.detail.powerpoint_cli_not_supported")
 
 
 def _find_wps_com_progid():
@@ -290,20 +308,21 @@ def _find_wps_com_progid():
     return None
 
 
-def _can_use_wps_com(has_wps_binary=False):
+def _can_use_wps_com(has_wps_binary=False, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     if SYSTEM_NAME == "Windows":
         try:
             import comtypes.client  # noqa: F401
         except ImportError:
-            return False, "当前环境缺少 comtypes"
+            return False, translator("core.detail.missing_comtypes")
 
         if not has_wps_binary:
-            return False, "未检测到 WPS 可执行文件"
+            return False, translator("core.detail.wps_binary_not_detected")
 
         progid = _find_wps_com_progid()
         if progid:
-            return True, f"COM 可用: {progid}"
-        return False, "未找到 WPS Presentation COM ProgID"
+            return True, translator("core.detail.com_available", value=progid)
+        return False, translator("core.detail.wps_com_progid_not_found")
 
     if SYSTEM_NAME == "Darwin":
         candidates = [
@@ -313,15 +332,16 @@ def _can_use_wps_com(has_wps_binary=False):
         ]
         for candidate in candidates:
             if os.path.exists(candidate):
-                return False, "已检测到 WPS.app，但当前还未实现 macOS 自动导出"
-        return False, "未检测到 WPS.app"
+                return False, translator("core.detail.wps_mac_not_implemented")
+        return False, translator("core.detail.wps_app_not_detected")
 
     if has_wps_binary:
-        return False, "已检测到 WPS 可执行文件，但当前还未实现该平台自动导出"
-    return False, "未检测到 WPS 可执行文件"
+        return False, translator("core.detail.wps_platform_not_implemented")
+    return False, translator("core.detail.wps_binary_not_detected")
 
 
-def detect_backends(explicit_path=None):
+def detect_backends(explicit_path=None, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     backends = []
     seen_paths = set()
     has_wps_binary = False
@@ -364,13 +384,13 @@ def detect_backends(explicit_path=None):
         detail = ""
         if backend_name == "wps":
             supported = False
-            detail = "已检测到 WPS 候选程序"
+            detail = translator("core.detail.wps_candidate_detected")
         elif backend_name == "custom":
-            detail = "通过 --office-bin 指定"
+            detail = translator("core.detail.explicit_office_bin")
         elif backend_name == "powerpoint":
-            detail = "已检测到 PowerPoint 候选程序"
+            detail = translator("core.detail.powerpoint_candidate_detected")
         elif explicit_path and os.path.abspath(resolved) == os.path.abspath(explicit_path):
-            detail = "通过 --office-bin 指定"
+            detail = translator("core.detail.explicit_office_bin")
 
         backends.append(
             BackendInfo(
@@ -383,7 +403,7 @@ def detect_backends(explicit_path=None):
         )
 
     if has_wps_binary:
-        supported, detail = _can_use_wps_com(has_wps_binary=True)
+        supported, detail = _can_use_wps_com(has_wps_binary=True, lang=lang)
         for index, item in enumerate(backends):
             if item.name == "wps":
                 backends[index] = BackendInfo(
@@ -398,7 +418,7 @@ def detect_backends(explicit_path=None):
     if powerpoint_executable:
         normalized = os.path.normcase(os.path.abspath(powerpoint_executable))
         if normalized not in seen_paths:
-            supported, detail = _can_use_powerpoint_com()
+            supported, detail = _can_use_powerpoint_com(lang=lang)
             backends.append(
                 BackendInfo(
                     name="powerpoint",
@@ -413,8 +433,9 @@ def detect_backends(explicit_path=None):
     return backends
 
 
-def find_backend(explicit_path=None, backend="auto"):
-    detected = detect_backends(explicit_path=explicit_path)
+def find_backend(explicit_path=None, backend="auto", *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
+    detected = detect_backends(explicit_path=explicit_path, lang=lang)
     if backend == "auto":
         preferred_order = ["libreoffice", "wps", "powerpoint", "custom"]
     else:
@@ -425,16 +446,25 @@ def find_backend(explicit_path=None, backend="auto"):
             if item.name == preferred_name and item.supported:
                 return item
 
-    detected_names = ", ".join(f"{item.name}:{item.path}" for item in detected) or "无"
+    detected_names = ", ".join(f"{item.name}:{item.path}" for item in detected) or (
+        "无" if lang == "zh" else "none"
+    )
     raise FileNotFoundError(
-        f"未找到可用的导出后端。请求后端: {backend}。"
-        f" 已检测到: {detected_names}。"
-        " 当前已实现的自动导出后端: LibreOffice、PowerPoint(Windows/macOS)、WPS(Windows)。"
+        translator(
+            "core.error.backend_not_found",
+            backend=backend,
+            detected_names=detected_names,
+        )
     )
 
 
-def export_pptx_to_pdf_with_libreoffice(pptx_path, output_pdf, office_bin=None):
-    office_executable = find_backend(explicit_path=office_bin, backend="libreoffice").path
+def export_pptx_to_pdf_with_libreoffice(pptx_path, output_pdf, office_bin=None, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
+    office_executable = find_backend(
+        explicit_path=office_bin,
+        backend="libreoffice",
+        lang=lang,
+    ).path
     source_path = Path(pptx_path).resolve()
     output_path = Path(output_pdf).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -453,12 +483,12 @@ def export_pptx_to_pdf_with_libreoffice(pptx_path, output_pdf, office_bin=None):
         if result.returncode != 0:
             stderr = result.stderr.strip()
             stdout = result.stdout.strip()
-            details = stderr or stdout or "LibreOffice 导出失败"
+            details = stderr or stdout or translator("core.error.libreoffice_export_failed_default")
             raise RuntimeError(details)
 
         converted_pdf = Path(tmp_dir) / f"{source_path.stem}.pdf"
         if not converted_pdf.exists():
-            raise RuntimeError("LibreOffice 没有生成预期的 PDF 文件")
+            raise RuntimeError(translator("core.error.libreoffice_pdf_missing"))
 
         shutil.copyfile(str(converted_pdf), str(output_path))
     return output_path
@@ -468,16 +498,18 @@ def export_pptx_to_pdf_with_powerpoint(
     pptx_path,
     output_pdf,
     *,
+    lang=DEFAULT_LANGUAGE,
     intent="print",
     bitmap_missing_fonts=False,
 ):
+    translator = get_translator(lang)
     if platform.system() != "Windows":
-        raise RuntimeError("PowerPoint 后端仅支持 Windows")
+        raise RuntimeError(translator("core.error.powerpoint_windows_only"))
 
     try:
         import comtypes.client
     except ImportError as exc:
-        raise RuntimeError("当前环境缺少 comtypes，无法调用 PowerPoint") from exc
+        raise RuntimeError(translator("core.error.missing_comtypes_powerpoint")) from exc
 
     source_path = Path(pptx_path).resolve()
     output_path = Path(output_pdf).resolve()
@@ -504,7 +536,7 @@ def export_pptx_to_pdf_with_powerpoint(
             UseISO19005_1=False,
         )
     except Exception as exc:
-        raise RuntimeError(f"PowerPoint 导出失败: {exc}") from exc
+        raise RuntimeError(translator("core.error.powerpoint_export_failed", error=exc)) from exc
     finally:
         if presentation is not None:
             try:
@@ -518,22 +550,23 @@ def export_pptx_to_pdf_with_powerpoint(
                 pass
 
     if not output_path.exists():
-        raise RuntimeError("PowerPoint 没有生成预期的 PDF 文件")
+        raise RuntimeError(translator("core.error.powerpoint_pdf_missing"))
     return output_path
 
 
-def export_pptx_to_pdf_with_wps(pptx_path, output_pdf):
+def export_pptx_to_pdf_with_wps(pptx_path, output_pdf, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     if platform.system() != "Windows":
-        raise RuntimeError("WPS 后端仅支持 Windows")
+        raise RuntimeError(translator("core.error.wps_windows_only"))
 
     try:
         import comtypes.client
     except ImportError as exc:
-        raise RuntimeError("当前环境缺少 comtypes，无法调用 WPS") from exc
+        raise RuntimeError(translator("core.error.missing_comtypes_wps")) from exc
 
     progid = _find_wps_com_progid()
     if not progid:
-        raise RuntimeError("未找到可用的 WPS Presentation COM 接口")
+        raise RuntimeError(translator("core.error.wps_com_missing"))
 
     source_path = Path(pptx_path).resolve()
     output_path = Path(output_pdf).resolve()
@@ -566,12 +599,16 @@ def export_pptx_to_pdf_with_wps(pptx_path, output_pdf):
                 presentation.SaveAs(str(output_path), 32)
             except Exception as exc:
                 raise RuntimeError(
-                    f"WPS 导出失败。ExportAsFixedFormat 错误: {export_error}; SaveAs(PDF) 错误: {exc}"
+                    translator(
+                        "core.error.wps_export_failed_both",
+                        fixed_error=export_error,
+                        save_error=exc,
+                    )
                 ) from exc
     except Exception as exc:
         if isinstance(exc, RuntimeError):
             raise
-        raise RuntimeError(f"WPS 导出失败: {exc}") from exc
+        raise RuntimeError(translator("core.error.wps_export_failed", error=exc)) from exc
     finally:
         if presentation is not None:
             try:
@@ -585,7 +622,7 @@ def export_pptx_to_pdf_with_wps(pptx_path, output_pdf):
                 pass
 
     if not output_path.exists():
-        raise RuntimeError("WPS 没有生成预期的 PDF 文件")
+        raise RuntimeError(translator("core.error.wps_pdf_missing"))
     return output_path
 
 
@@ -594,6 +631,7 @@ def export_selected_pages(
     output_pdf,
     pages,
     *,
+    lang=DEFAULT_LANGUAGE,
     backend="auto",
     office_bin=None,
     powerpoint_intent="print",
@@ -610,23 +648,30 @@ def export_selected_pages(
 
     with tempfile.TemporaryDirectory(prefix="ppt2fig-pages-") as tmp_dir:
         full_pdf = Path(tmp_dir) / "full.pdf"
-        selected_backend = find_backend(explicit_path=office_bin, backend=backend)
+        selected_backend = find_backend(explicit_path=office_bin, backend=backend, lang=lang)
         if selected_backend.name in {"libreoffice", "custom"}:
-            export_pptx_to_pdf_with_libreoffice(pptx_path, full_pdf, office_bin=selected_backend.path)
+            export_pptx_to_pdf_with_libreoffice(
+                pptx_path,
+                full_pdf,
+                office_bin=selected_backend.path,
+                lang=lang,
+            )
         elif selected_backend.name == "powerpoint":
             export_pptx_to_pdf_with_powerpoint(
                 pptx_path,
                 full_pdf,
+                lang=lang,
                 intent=powerpoint_intent,
                 bitmap_missing_fonts=bitmap_missing_fonts,
             )
         elif selected_backend.name == "wps":
-            export_pptx_to_pdf_with_wps(pptx_path, full_pdf)
+            export_pptx_to_pdf_with_wps(pptx_path, full_pdf, lang=lang)
         else:
-            raise RuntimeError(f"暂不支持使用后端 {selected_backend.name} 导出")
-        extract_pdf_pages(full_pdf, output_path, pages)
+            raise RuntimeError(get_translator(lang)("core.error.backend_unsupported", backend=selected_backend.name))
+        extract_pdf_pages(full_pdf, output_path, pages, lang=lang)
         crop_pdf_file(
             output_path,
+            lang=lang,
             no_crop=no_crop,
             percent_retain=percent_retain,
             margin_size=margin_size,
@@ -637,11 +682,12 @@ def export_selected_pages(
     return output_path
 
 
-def current_slide_2_pdf_windows(output_pdf_file):
+def current_slide_2_pdf_windows(output_pdf_file, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     try:
         import comtypes.client
     except ImportError as exc:
-        raise RuntimeError("当前环境缺少 comtypes，无法调用 PowerPoint") from exc
+        raise RuntimeError(translator("core.error.missing_comtypes_powerpoint")) from exc
 
     powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
     powerpoint.Visible = 1
@@ -653,15 +699,16 @@ def current_slide_2_pdf_windows(output_pdf_file):
     return True
 
 
-def current_slide_2_pdf_mac(output_pdf_file):
+def current_slide_2_pdf_mac(output_pdf_file, *, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     script = '''
     tell application "Microsoft PowerPoint"
         if not running then
-            return "PowerPoint未启动"
+            return "%s"
         end if
 
         if (count of presentations) is 0 then
-            return "没有打开的PPT文件"
+            return "%s"
         end if
 
         set pdfPath to "%s"
@@ -669,15 +716,21 @@ def current_slide_2_pdf_mac(output_pdf_file):
         save active presentation in pdfPath as save as PDF
         return "success"
     end tell
-    ''' % output_pdf_file
+    ''' % (POWERPOINT_NOT_RUNNING, POWERPOINT_NO_PRESENTATION, output_pdf_file)
 
     result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if "success" in result.stdout:
         return True
-    raise RuntimeError(result.stdout.strip() or result.stderr.strip() or "转换过程出错")
+    stdout = result.stdout.strip()
+    if stdout == POWERPOINT_NOT_RUNNING:
+        raise RuntimeError(translator("core.error.active_powerpoint_not_running"))
+    if stdout == POWERPOINT_NO_PRESENTATION:
+        raise RuntimeError(translator("core.error.active_powerpoint_no_file"))
+    raise RuntimeError(stdout or result.stderr.strip() or translator("core.error.conversion_failed"))
 
 
-def get_active_presentation_info():
+def get_active_presentation_info(*, lang=DEFAULT_LANGUAGE):
+    translator = get_translator(lang)
     if platform.system() == "Windows":
         import comtypes.client
 
@@ -686,27 +739,30 @@ def get_active_presentation_info():
             ppt_file = powerpoint.ActivePresentation
             return ppt_file.FullName, ppt_file.Name
         except Exception as exc:
-            raise RuntimeError("PowerPoint未启动或没有打开的文件") from exc
+            raise RuntimeError(translator("core.error.active_presentation_missing")) from exc
 
     script = '''
     tell application "Microsoft PowerPoint"
         if not running then
-            return "PowerPoint未启动"
+            return "%s"
         end if
 
         if (count of presentations) is 0 then
-            return "没有打开的PPT文件"
+            return "%s"
         end if
 
         set thePresentation to active presentation
         return {full name of thePresentation, name of thePresentation}
     end tell
-    '''
+    ''' % (POWERPOINT_NOT_RUNNING, POWERPOINT_NO_PRESENTATION)
     result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
-    if "PowerPoint未启动" in result.stdout or "没有打开的PPT文件" in result.stdout:
-        raise RuntimeError(result.stdout.strip())
+    stdout = result.stdout.strip()
+    if stdout == POWERPOINT_NOT_RUNNING:
+        raise RuntimeError(translator("core.error.active_powerpoint_not_running"))
+    if stdout == POWERPOINT_NO_PRESENTATION:
+        raise RuntimeError(translator("core.error.active_powerpoint_no_file"))
 
-    output = result.stdout.strip().split(", ")
+    output = stdout.split(", ")
     if len(output) == 2:
         return output[0], output[1]
-    raise RuntimeError("无法获取PPT文件信息")
+    raise RuntimeError(translator("core.error.active_presentation_info_failed"))
