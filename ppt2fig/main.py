@@ -1,6 +1,8 @@
 import platform
 import sys
 
+from .i18n import DEFAULT_LANGUAGE
+
 
 def main():
     if len(sys.argv) > 1:
@@ -17,7 +19,7 @@ def main():
 
     from .cli import build_parser
 
-    build_parser().print_help()
+    build_parser(DEFAULT_LANGUAGE).print_help()
 
 
 if __name__ == "__main__":

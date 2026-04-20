@@ -6,7 +6,7 @@ from ppt2fig import __version__
 
 setup(name='ppt2fig',
       version=__version__,
-      description='导出 PowerPoint 页面为 PDF，支持 Windows GUI 和跨平台 CLI。',
+      description='Export PowerPoint pages to PDF with Windows GUIs and a cross-platform CLI / 导出 PowerPoint 页面为 PDF，支持 Windows GUI 和跨平台 CLI。',
       long_description=open('README.md', encoding='utf-8').read(),
       long_description_content_type='text/markdown',
       author='Elliot Zheng',

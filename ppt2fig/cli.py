@@ -3,12 +3,25 @@ from pathlib import Path
 
 from . import __version__
 from .core import detect_backends, export_selected_pages, parse_page_range
+from .i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, get_translator, install_argparse_translations
 
 
-def build_parser():
+def resolve_cli_language(argv=None):
+    args = list(argv or [])
+    for index, arg in enumerate(args):
+        if arg == "--lang" and index + 1 < len(args):
+            return args[index + 1]
+        if arg.startswith("--lang="):
+            return arg.split("=", 1)[1]
+    return DEFAULT_LANGUAGE
+
+
+def build_parser(lang=DEFAULT_LANGUAGE):
+    install_argparse_translations(lang)
+    translator = get_translator(lang)
     parser = argparse.ArgumentParser(
         prog="ppt2fig",
-        description="将指定 PPTX 的指定页导出为 PDF，并可选自动裁剪白边。",
+        description=translator("cli.description"),
     )
     parser.add_argument(
         "-v",
@@ -16,71 +29,77 @@ def build_parser():
         action="version",
         version=f"%(prog)s {__version__}",
     )
-    parser.add_argument("pptx", nargs="?", help="输入的 PPTX 文件路径")
+    parser.add_argument(
+        "--lang",
+        choices=SUPPORTED_LANGUAGES,
+        default=DEFAULT_LANGUAGE,
+        help=translator("lang.help"),
+    )
+    parser.add_argument("pptx", nargs="?", help=translator("cli.arg.pptx"))
     parser.add_argument(
         "-p",
         "--pages",
-        help="要导出的页码，支持 1,3,5-7 这种格式，页码从 1 开始",
+        help=translator("cli.arg.pages"),
     )
     parser.add_argument(
         "-o",
         "--output",
-        help="输出 PDF 路径，默认在输入文件同目录下生成",
+        help=translator("cli.arg.output"),
     )
     parser.add_argument(
         "--office-bin",
-        help="手动指定导出后端可执行文件路径，例如 soffice 或 libreoffice",
+        help=translator("cli.arg.office_bin"),
     )
     parser.add_argument(
         "--backend",
         choices=["auto", "libreoffice", "powerpoint", "wps"],
         default="auto",
-        help="选择导出后端，默认 auto",
+        help=translator("cli.arg.backend"),
     )
     parser.add_argument(
         "--list-backends",
         action="store_true",
-        help="列出当前系统检测到的候选后端并退出",
+        help=translator("cli.arg.list_backends"),
     )
     parser.add_argument(
         "--powerpoint-intent",
         choices=["print", "screen"],
         default="print",
-        help="PowerPoint 后端的导出意图，默认 print",
+        help=translator("cli.arg.powerpoint_intent"),
     )
     parser.add_argument(
         "--bitmap-missing-fonts",
         action="store_true",
-        help="PowerPoint 后端在字体无法嵌入时将文字位图化",
+        help=translator("cli.arg.bitmap_missing_fonts"),
     )
-    parser.add_argument("--no-crop", action="store_true", help="导出后不裁剪白边")
+    parser.add_argument("--no-crop", action="store_true", help=translator("cli.arg.no_crop"))
     parser.add_argument(
         "--percent-retain",
         type=float,
         default=0.0,
-        help="保留原始边距的百分比，默认 0",
+        help=translator("cli.arg.percent_retain"),
     )
     parser.add_argument(
         "--margin-size",
         type=float,
         default=0.0,
-        help="裁剪后额外增加的白边，单位 bp，默认 0",
+        help=translator("cli.arg.margin_size"),
     )
     parser.add_argument(
         "--threshold",
         type=int,
         default=191,
-        help="背景检测阈值，默认 191",
+        help=translator("cli.arg.threshold"),
     )
     parser.add_argument(
         "--no-uniform",
         action="store_true",
-        help="禁用统一裁剪",
+        help=translator("cli.arg.no_uniform"),
     )
     parser.add_argument(
         "--no-same-size",
         action="store_true",
-        help="禁用统一页面大小",
+        help=translator("cli.arg.no_same_size"),
     )
     return parser
 
@@ -92,48 +111,62 @@ def default_output_path(pptx_path, pages):
 
 
 def main(argv=None):
-    parser = build_parser()
+    cli_lang = resolve_cli_language(argv)
+    parser = build_parser(cli_lang)
     args = parser.parse_args(argv)
+    translator = get_translator(args.lang)
 
     if args.list_backends:
-        backends = detect_backends(explicit_path=args.office_bin)
+        backends = detect_backends(explicit_path=args.office_bin, lang=args.lang)
         if not backends:
-            print("未检测到任何候选后端")
+            print(translator("cli.list_backends.none"))
             return
         for backend in backends:
-            status = "supported" if backend.supported else "detected"
+            status = (
+                translator("cli.backend.supported")
+                if backend.supported
+                else translator("cli.backend.detected")
+            )
             suffix = f" ({backend.detail})" if backend.detail else ""
             print(f"{backend.name}\t{status}\t{backend.path}{suffix}")
         return
 
     if not args.pptx:
-        parser.error("缺少输入文件 pptx")
+        parser.error(translator("cli.error.missing_pptx"))
     if not args.pages:
-        parser.error("missing required argument: -p/--pages")
+        parser.error(translator("cli.error.missing_pages"))
 
-    pages = parse_page_range(args.pages)
+    try:
+        pages = parse_page_range(args.pages, lang=args.lang)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     source = Path(args.pptx).resolve()
     if not source.exists():
-        parser.error(f"输入文件不存在: {source}")
+        parser.error(translator("cli.error.input_not_found", path=source))
     if source.suffix.lower() not in {".pptx", ".ppt", ".odp"}:
-        parser.error("输入文件必须是 .pptx、.ppt 或 .odp")
+        parser.error(translator("cli.error.invalid_extension"))
 
     output = Path(args.output).resolve() if args.output else default_output_path(source, pages)
-    export_selected_pages(
-        source,
-        output,
-        pages,
-        backend=args.backend,
-        office_bin=args.office_bin,
-        powerpoint_intent=args.powerpoint_intent,
-        bitmap_missing_fonts=args.bitmap_missing_fonts,
-        no_crop=args.no_crop,
-        percent_retain=args.percent_retain,
-        margin_size=args.margin_size,
-        use_uniform=not args.no_uniform,
-        use_same_size=not args.no_same_size,
-        threshold=args.threshold,
-    )
+    try:
+        export_selected_pages(
+            source,
+            output,
+            pages,
+            lang=args.lang,
+            backend=args.backend,
+            office_bin=args.office_bin,
+            powerpoint_intent=args.powerpoint_intent,
+            bitmap_missing_fonts=args.bitmap_missing_fonts,
+            no_crop=args.no_crop,
+            percent_retain=args.percent_retain,
+            margin_size=args.margin_size,
+            use_uniform=not args.no_uniform,
+            use_same_size=not args.no_same_size,
+            threshold=args.threshold,
+        )
+    except Exception as exc:
+        parser.exit(1, f"{parser.prog}: {translator('cli.error.prefix')}: {exc}\n")
     print(output)
 
 
