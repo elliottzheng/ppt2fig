@@ -14,9 +14,9 @@ Workflow:
    Examples: `1`, `2`, `1,3,5-7`
 3. Decide the backend.
    Defaults:
-   - `auto` for normal use
-   - `libreoffice` when cross-platform consistency matters
-   - `wps` or `powerpoint` only when the user explicitly wants those backends
+   - Use `auto` by default.
+   - Let the program choose the best available backend unless the user explicitly asks for a specific one.
+   - Only force `libreoffice`, `wps`, or `powerpoint` when the user has a clear backend preference or needs a comparison.
 4. Decide whether to crop.
    - Use default cropping for paper figures.
    - Use `--no-crop` only when the user explicitly wants original margins.
@@ -27,7 +27,7 @@ Preferred commands:
 
 ```bash
 ppt2fig "/abs/path/input.pptx" --pages 2 -o "/abs/path/output.pdf"
-ppt2fig "/abs/path/input.pptx" --pages 1,3,5-7 --backend libreoffice
+ppt2fig "/abs/path/input.pptx" --pages 1,3,5-7
 ppt2fig "/abs/path/input.pptx" --pages 2 --backend wps
 ppt2fig "/abs/path/input.pptx" --pages 2 --backend powerpoint --powerpoint-intent print
 ```
@@ -50,7 +50,8 @@ Behavior notes:
 - `--list-backends` prints what the current machine can use.
 - Page numbers are 1-based.
 - Output defaults to `<input>.pages_<page-spec>.pdf` when `-o` is omitted.
-- PowerPoint image quality is limited by Microsoft's export API; `--powerpoint-intent print` is the highest-quality option exposed by the CLI.
+- If the user does not explicitly request a backend, keep the default `auto`.
+- PowerPoint image quality is limited by Microsoft's export API; `--powerpoint-intent print` only matters when the user explicitly chooses the PowerPoint backend.
 
 Useful checks:
 

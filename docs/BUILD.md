@@ -28,9 +28,9 @@ python -m PyInstaller packaging\ppt2fig-cli.spec --noconfirm --distpath dist --w
 If `PyInstaller` is only available in the `ppt2fig` conda environment, use:
 
 ```cmd
-C:\Users\18350\.conda\envs\ppt2fig\python.exe -m PyInstaller packaging\ppt2fig.spec --noconfirm --distpath dist --workpath build\ppt2fig --upx-dir .
-C:\Users\18350\.conda\envs\ppt2fig\python.exe -m PyInstaller packaging\ppt2fig-file-gui.spec --noconfirm --distpath dist --workpath build\ppt2fig-file-gui --upx-dir .
-C:\Users\18350\.conda\envs\ppt2fig\python.exe -m PyInstaller packaging\ppt2fig-cli.spec --noconfirm --distpath dist --workpath build\ppt2fig-cli --upx-dir .
+%USERPROFILE%\.conda\envs\ppt2fig\python.exe -m PyInstaller packaging\ppt2fig.spec --noconfirm --distpath dist --workpath build\ppt2fig --upx-dir .
+%USERPROFILE%\.conda\envs\ppt2fig\python.exe -m PyInstaller packaging\ppt2fig-file-gui.spec --noconfirm --distpath dist --workpath build\ppt2fig-file-gui --upx-dir .
+%USERPROFILE%\.conda\envs\ppt2fig\python.exe -m PyInstaller packaging\ppt2fig-cli.spec --noconfirm --distpath dist --workpath build\ppt2fig-cli --upx-dir .
 ```
 
 ## Outputs
